@@ -7,52 +7,76 @@ import (
 	"time"
 )
 
-// 사이트 상태를 체크하는 함수
-func checkStatus(url string, wg *sync.WaitGroup, results chan<- string) {
-	defer wg.Done() // 함수 종료 시 WaitGroup 카운터 감소
+// 1. 결과를 담을 구조체 정의
+type Result struct {
+	URL          string
+	StatusCode   int
+	Duration     time.Duration
+	ErrorMessage error
+}
+
+func checkStatus(url string, wg *sync.WaitGroup, results chan<- Result) {
+	defer wg.Done()
 
 	start := time.Now()
-	resp, err := http.Get(url)
+	// 타임아웃 설정을 추가한 클라이언트 (권장사항)
+	client := http.Client{
+		Timeout: 5 * time.Second,
+	}
+
+	resp, err := client.Get(url)
 	elapsed := time.Since(start)
 
+	// 2. 구조체 인스턴스를 생성하여 채널로 전송
 	if err != nil {
-		results <- fmt.Sprintf("[ERROR] %s: %v", url, err)
+		results <- Result{
+			URL:          url,
+			ErrorMessage: err,
+			Duration:     elapsed,
+		}
 		return
 	}
 	defer resp.Body.Close()
 
-	results <- fmt.Sprintf("[%d OK] %s (%v)", resp.StatusCode, url, elapsed)
+	results <- Result{
+		URL:        url,
+		StatusCode: resp.StatusCode,
+		Duration:   elapsed,
+	}
 }
 
 func main() {
 	urls := []string{
 		"https://www.google.com",
 		"https://www.github.com",
-		"https://www.go.dev",
-		"https://www.stackoverflow.com",
-		"https://www.netflix.com",
+		"https://www.golang.org",               // 간혹 접속이 느릴 수 있음
+		"https://this-site-does-not-exist.com", // 에러 테스트용
 	}
 
 	var wg sync.WaitGroup
-	results := make(chan string, len(urls)) // 결과 전달을 위한 채널
-
-	startTime := time.Now()
+	// 3. Result 타입을 주고받는 채널 생성
+	results := make(chan Result, len(urls))
 
 	for _, url := range urls {
-		wg.Add(1)                         // 실행할 고루틴 개수 추가
-		go checkStatus(url, &wg, results) // 고루틴 실행
+		wg.Add(1)
+		go checkStatus(url, &wg, results)
 	}
 
-	// 모든 고루틴이 끝날 때까지 기다림
+	// 고루틴 감시자
 	go func() {
 		wg.Wait()
-		close(results) // 더 이상 보낼 데이터가 없으면 채널을 닫음
+		close(results)
 	}()
 
-	// 결과 출력
-	for res := range results {
-		fmt.Println(res)
-	}
+	fmt.Println("--- 크롤링 결과 분석 ---")
 
-	fmt.Printf("\n전체 소요 시간: %v\n", time.Since(startTime))
+	// 4. 채널에서 구조체를 꺼내어 활용
+	for res := range results {
+		if res.ErrorMessage != nil {
+			fmt.Printf("❌ 실패: %-30s | 에러: %v\n", res.URL, res.ErrorMessage)
+		} else {
+			fmt.Printf("✅ 성공: %-30s | 상태: %d | 소요시간: %v\n",
+				res.URL, res.StatusCode, res.Duration)
+		}
+	}
 }
