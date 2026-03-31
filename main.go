@@ -2,62 +2,42 @@ package main
 
 import (
 	"fmt"
-	"sync"
-	"time"
 )
 
-// 1. 구조체와 인터페이스: Go는 클래스 대신 구조체를 사용합니다.
-type User struct {
-	ID   int
-	Name string
-}
-
-// 2. 고루틴을 이용한 가상의 DB 저장 함수
-func saveUser(id int, name string, wg *sync.WaitGroup, results chan<- string) {
-	// 함수 종료 시 WaitGroup 카운트 감소
-	defer wg.Done()
-
-	// 가상의 네트워크/DB 지연 시간 시뮬레이션 (PostgreSQL 저장 가정)
-	time.Sleep(time.Millisecond * 500)
-
-	result := fmt.Sprintf("유저 %d(%s) 저장 완료", id, name)
-
-	// 3. 채널을 통해 결과 전송
-	results <- result
-}
-
 func main() {
-	users := []User{
-		{ID: 1, Name: "Alice"},
-		{ID: 2, Name: "Bob"},
-		{ID: 3, Name: "Charlie"},
+	var num1, num2 float64
+	var operator string
+
+	fmt.Println("--- Go 계산기 프로그램 ---")
+
+	// 1. 첫 번째 숫자 입력
+	fmt.Print("첫 번째 숫자를 입력하세요: ")
+	fmt.Scanln(&num1)
+
+	// 2. 연산자 입력
+	fmt.Print("연산자를 입력하세요 (+, -, *, /): ")
+	fmt.Scanln(&operator)
+
+	// 3. 두 번째 숫자 입력
+	fmt.Print("두 번째 숫자를 입력하세요: ")
+	fmt.Scanln(&num2)
+
+	// 4. 연산 수행 및 결과 출력
+	switch operator {
+	case "+":
+		fmt.Printf("%.2f + %.2f = %.2f\n", num1, num2, num1+num2)
+	case "-":
+		fmt.Printf("%.2f - %.2f = %.2f\n", num1, num2, num1-num2)
+	case "*":
+		fmt.Printf("%.2f * %.2f = %.2f\n", num1, num2, num1*num2)
+	case "/":
+		// 에러 처리: 0으로 나누기 방지
+		if num2 == 0 {
+			fmt.Println("오류: 0으로 나눌 수 없습니다.")
+		} else {
+			fmt.Printf("%.2f / %.2f = %.2f\n", num1, num2, num1/num2)
+		}
+	default:
+		fmt.Println("잘못된 연산자입니다.")
 	}
-
-	// 고루틴 동기화를 위한 WaitGroup
-	var wg sync.WaitGroup
-	// 결과 수집을 위한 채널
-	results := make(chan string, len(users))
-
-	fmt.Println("데이터 저장을 시작합니다...")
-	start := time.Now()
-
-	for _, u := range users {
-		wg.Add(1)
-		// 4. 'go' 키워드 하나로 비동기 실행 (고루틴)
-		go saveUser(u.ID, u.Name, &wg, results)
-	}
-
-	// 모든 고루틴이 끝날 때까지 대기하고 채널 닫기
-	go func() {
-		wg.Wait()
-		close(results)
-	}()
-
-	// 5. 채널에 쌓인 결과 출력
-	for res := range results {
-		fmt.Println("-", res)
-	}
-
-	fmt.Printf("전체 소요 시간: %v\n", time.Since(start))
-	fmt.Println("모든 작업이 안전하게 종료되었습니다.")
 }
