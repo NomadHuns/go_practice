@@ -41,7 +41,7 @@ func loadFromFile() []Calculation {
 }
 
 func mainHandler(w http.ResponseWriter, r *http.Request) {
-	tmpl, _ := template.ParseFiles("index.html")
+	tmpl, _ := template.ParseFiles("./index.html")
 
 	// 1. 기존 기록 무조건 불러오기
 	allHistory := loadFromFile()
