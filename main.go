@@ -1,22 +1,16 @@
 package main
 
 import (
-	"encoding/json"
-	"errors"
 	"fmt"
+	"html/template" // HTML 템플릿 처리를 위해 추가
 	"net/http"
 	"strconv"
 )
 
-// 1. 계산 기록을 담을 구조체 정의
-type Calculation struct {
+// 화면에 전달할 데이터 구조체
+type PageData struct {
 	Num1, Num2, Result float64
-	Op                 string
-}
-
-// 2. 구조체 데이터를 예쁘게 출력해주는 메서드 (선택 사항)
-func (c Calculation) ToString() string {
-	return fmt.Sprintf("%.2f %s %.2f = %.2f", c.Num1, c.Op, c.Num2, c.Result)
+	Op, Error          string
 }
 
 func calculate(n1, n2 float64, op string) (float64, error) {
@@ -29,47 +23,48 @@ func calculate(n1, n2 float64, op string) (float64, error) {
 		return n1 * n2, nil
 	case "/":
 		if n2 == 0 {
-			return 0, errors.New("0으로 나눌 수 없음")
+			return 0, fmt.Errorf("0으로 나눌 수 없습니다")
 		}
 		return n1 / n2, nil
 	default:
-		return 0, errors.New("잘못된 연산자")
+		return 0, fmt.Errorf("잘못된 연산자")
 	}
 }
 
-// 웹 요청을 처리하는 핸들러 함수
-func calcHandler(w http.ResponseWriter, r *http.Request) {
-	// 1. URL 파라미터 읽기 (예: ?a=10&b=5&op=+)
-	query := r.URL.Query()
-
-	aStr := query.Get("a")
-	bStr := query.Get("b")
-	op := query.Get("op")
-
-	// 2. 문자열 숫자를 float64로 변환
-	a, _ := strconv.ParseFloat(aStr, 64)
-	b, _ := strconv.ParseFloat(bStr, 64)
-
-	// 3. 계산 수행
-	res, err := calculate(a, b, op)
+func mainHandler(w http.ResponseWriter, r *http.Request) {
+	// 1. 템플릿 파일 파싱
+	tmpl, err := template.ParseFiles("index.html")
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		http.Error(w, "템플릿을 찾을 수 없습니다", http.StatusInternalServerError)
 		return
 	}
 
-	// 4. 결과를 JSON으로 응답
-	resultObj := Calculation{Num1: a, Num2: b, Op: op, Result: res}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resultObj)
+	// 2. 폼 데이터 읽기 (GET 방식)
+	aStr := r.URL.Query().Get("a")
+	bStr := r.URL.Query().Get("b")
+	op := r.URL.Query().Get("op")
+
+	data := PageData{}
+
+	// 3. 값이 있을 때만 계산 수행
+	if aStr != "" && bStr != "" {
+		a, _ := strconv.ParseFloat(aStr, 64)
+		b, _ := strconv.ParseFloat(bStr, 64)
+		res, calcErr := calculate(a, b, op)
+
+		data = PageData{Num1: a, Num2: b, Op: op, Result: res}
+		if calcErr != nil {
+			data.Error = calcErr.Error()
+		}
+	}
+
+	// 4. 템플릿에 데이터 주입하여 응답
+	tmpl.Execute(w, data)
 }
 
 func main() {
-	// 주소와 핸들러 연결
-	http.HandleFunc("/calculate", calcHandler)
+	http.HandleFunc("/", mainHandler) // 모든 접속을 핸들러로 연결
 
-	fmt.Println("🚀 서버가 http://localhost:8080 에서 시작되었습니다!")
-	// 서버 실행
-	if err := http.ListenAndServe(":8080", nil); err != nil {
-		fmt.Println("서버 실행 실패:", err)
-	}
+	fmt.Println("🌐 서버 시작: http://localhost:8080")
+	http.ListenAndServe(":8080", nil)
 }
