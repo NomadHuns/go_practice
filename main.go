@@ -1,70 +1,98 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
-	"html/template" // HTML 템플릿 처리를 위해 추가
+	"html/template"
 	"net/http"
+	"os"
 	"strconv"
 )
 
-// 화면에 전달할 데이터 구조체
-type PageData struct {
-	Num1, Num2, Result float64
-	Op, Error          string
+type Calculation struct {
+	Num1   float64 `json:"num1"`
+	Num2   float64 `json:"num2"`
+	Op     string  `json:"operator"`
+	Result float64 `json:"result"`
 }
 
-func calculate(n1, n2 float64, op string) (float64, error) {
-	switch op {
-	case "+":
-		return n1 + n2, nil
-	case "-":
-		return n1 - n2, nil
-	case "*":
-		return n1 * n2, nil
-	case "/":
-		if n2 == 0 {
-			return 0, fmt.Errorf("0으로 나눌 수 없습니다")
-		}
-		return n1 / n2, nil
-	default:
-		return 0, fmt.Errorf("잘못된 연산자")
+type PageData struct {
+	Current Calculation
+	History []Calculation
+	Error   string
+}
+
+const fileName = "history.json"
+
+// 파일 관리 함수들
+func saveToFile(history []Calculation) {
+	data, _ := json.MarshalIndent(history, "", "  ")
+	os.WriteFile(fileName, data, 0644)
+}
+
+func loadFromFile() []Calculation {
+	data, err := os.ReadFile(fileName)
+	if err != nil {
+		return []Calculation{}
 	}
+	var history []Calculation
+	json.Unmarshal(data, &history)
+	return history
 }
 
 func mainHandler(w http.ResponseWriter, r *http.Request) {
-	// 1. 템플릿 파일 파싱
-	tmpl, err := template.ParseFiles("index.html")
-	if err != nil {
-		http.Error(w, "템플릿을 찾을 수 없습니다", http.StatusInternalServerError)
-		return
-	}
+	tmpl, _ := template.ParseFiles("index.html")
 
-	// 2. 폼 데이터 읽기 (GET 방식)
+	// 1. 기존 기록 무조건 불러오기
+	allHistory := loadFromFile()
+
 	aStr := r.URL.Query().Get("a")
 	bStr := r.URL.Query().Get("b")
 	op := r.URL.Query().Get("op")
 
-	data := PageData{}
+	data := PageData{History: allHistory}
 
-	// 3. 값이 있을 때만 계산 수행
+	// 2. 계산 요청이 들어온 경우
 	if aStr != "" && bStr != "" {
 		a, _ := strconv.ParseFloat(aStr, 64)
 		b, _ := strconv.ParseFloat(bStr, 64)
-		res, calcErr := calculate(a, b, op)
 
-		data = PageData{Num1: a, Num2: b, Op: op, Result: res}
-		if calcErr != nil {
-			data.Error = calcErr.Error()
+		// 간단 계산 로직 (에러 체크 생략 버전)
+		res := 0.0
+		switch op {
+		case "+":
+			res = a + b
+		case "-":
+			res = a - b
+		case "*":
+			res = a * b
+		case "/":
+			if b != 0 {
+				res = a / b
+			} else {
+				data.Error = "0으로 나눌 수 없음"
+			}
+		}
+
+		if data.Error == "" {
+			newCalc := Calculation{Num1: a, Num2: b, Op: op, Result: res}
+			data.Current = newCalc
+
+			// 3. 새 기록 추가 및 파일 저장
+			allHistory = append([]Calculation{newCalc}, allHistory...) // 최신순 정렬
+			if len(allHistory) > 5 {
+				allHistory = allHistory[:5]
+			} // 5개만 유지
+			saveToFile(allHistory)
+			data.History = allHistory
 		}
 	}
 
-	// 4. 템플릿에 데이터 주입하여 응답
 	tmpl.Execute(w, data)
 }
 
 func main() {
-	http.HandleFunc("/", mainHandler) // 모든 접속을 핸들러로 연결
-
-	fmt.Println("🌐 서버 시작: http://localhost:8080")
+	http.HandleFunc("/", mainHandler)
+	fmt.Println("🌐 http://localhost:8080 에서 확인하세요!")
 	http.ListenAndServe(":8080", nil)
 }

@@ -15,6 +15,15 @@
 <body>
 <div class="card">
     <h2>🧮 Go 웹 계산기</h2>
+    <hr>
+    <h3>📜 최근 계산 기록 (최대 5개)</h3>
+    <ul>
+        {{range .History}}
+        <li>{{.Num1}} {{.Op}} {{.Num2}} = <strong>{{.Result}}</strong></li>
+        {{else}}
+        <li>아직 기록이 없습니다.</li>
+        {{end}}
+    </ul>
     <form action="/calculate" method="GET">
         <input type="number" name="a" placeholder="숫자 1" required step="any">
         <select name="op">
