@@ -1,7 +1,7 @@
 package main
 
 import (
-	"bufio"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -19,57 +19,31 @@ func (c Calculation) ToString() string {
 	return fmt.Sprintf("%.2f %s %.2f = %.2f", c.Num1, c.Op, c.Num2, c.Result)
 }
 
-// 파일에 기록을 저장하는 전용 함수
-func saveHistory(history []Calculation) error {
-	// 1. 파일 열기 (없으면 생성, 있으면 끝에 추가, 쓰기 전용 권한 0644)
-	file, err := os.OpenFile("history.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+// 파일명을 .json으로 변경
+const fileName = "history.json"
+
+// [기능 분리] 저장 로직
+func saveAsJSON(history []Calculation) error {
+	data, err := json.MarshalIndent(history, "", "  ")
 	if err != nil {
 		return err
 	}
-
-	// 2. defer: 함수가 끝나기 직전에 무조건 파일을 닫도록 예약 (중요!)
-	defer file.Close()
-
-	fmt.Fprintln(file, "\n--- 새로운 세션 기록 ---")
-	for _, c := range history {
-		// 3. fmt.Fprintln을 사용해 콘솔이 아닌 'file' 객체에 쓰기
-		_, err := fmt.Fprintln(file, c.ToString())
-		if err != nil {
-			return err
-		}
-	}
-	return nil
+	return os.WriteFile(fileName, data, 0644)
 }
 
-// 파일에서 이전 기록을 읽어와 출력하는 함수
-func loadHistory() {
-	// 1. 파일 열기 (읽기 전용)
-	file, err := os.Open("history.txt")
+// [기능 분리] 불러오기 로직
+func loadFromJSON() ([]Calculation, error) {
+	data, err := os.ReadFile(fileName)
 	if err != nil {
-		// 파일이 없으면 에러가 나지만, 처음 실행 시에는 당연한 것이므로 무시합니다.
 		if os.IsNotExist(err) {
-			fmt.Println("📜 이전 기록이 없습니다. 새로운 세션을 시작합니다.")
-			return
+			return []Calculation{}, nil // 파일이 없으면 빈 슬라이스 반환
 		}
-		fmt.Println("⚠️ 파일을 읽는 중 오류 발생:", err)
-		return
-	}
-	defer file.Close()
-
-	fmt.Println("============================")
-	fmt.Println("      📂 이전 연산 기록      ")
-	fmt.Println("============================")
-
-	// 2. Scanner를 사용하여 한 줄씩 읽기
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		fmt.Println(scanner.Text()) // 한 줄 읽어서 콘솔에 출력
+		return nil, err
 	}
 
-	if err := scanner.Err(); err != nil {
-		fmt.Println("⚠️ 파일 내용 읽기 오류:", err)
-	}
-	fmt.Println("============================\n")
+	var history []Calculation
+	err = json.Unmarshal(data, &history)
+	return history, err
 }
 
 func calculate(n1, n2 float64, op string) (float64, error) {
@@ -91,10 +65,22 @@ func calculate(n1, n2 float64, op string) (float64, error) {
 }
 
 func main() {
-	loadHistory()
+	// 1. 시작하자마자 기존 기록 불러오기
+	history, err := loadFromJSON()
+	if err != nil {
+		fmt.Println("⚠️ 데이터를 불러오는 중 오류 발생:", err)
+		history = []Calculation{} // 에러 발생 시 빈 상태로 시작
+	}
 
-	// 3. 문자열 슬라이스가 아닌 'Calculation 구조체 슬라이스' 선언
-	var history []Calculation
+	// 2. 기존 기록이 있다면 출력
+	if len(history) > 0 {
+		fmt.Println("📜 [이전 연산 기록을 불러왔습니다]")
+		for i, c := range history {
+			fmt.Printf("[%d] %s\n", i+1, c.ToString())
+		}
+	} else {
+		fmt.Println("✨ 기존 기록이 없습니다. 새로운 계산을 시작합니다.")
+	}
 
 	for {
 		var n1, n2 float64
@@ -130,14 +116,18 @@ func main() {
 		fmt.Printf("결과: %s\n", calc.ToString())
 	}
 
-	// 최종 기록 출력
+	// 4. 종료 전 저장
 	if len(history) > 0 {
-		fmt.Println("파일에 기록을 저장 중...")
-		err := saveHistory(history)
-		if err != nil {
-			fmt.Println("파일 저장 실패:", err)
-		} else {
-			fmt.Println("history.txt 파일에 저장 완료!")
+		fmt.Print("\n💾 기록을 저장하시겠습니까? (y/n): ")
+		var saveConfirm string
+		fmt.Scanln(&saveConfirm)
+
+		if strings.ToLower(saveConfirm) == "y" {
+			if err := saveAsJSON(history); err != nil {
+				fmt.Println("❌ 저장 실패:", err)
+			} else {
+				fmt.Println("🎉 history.json에 성공적으로 저장되었습니다!")
+			}
 		}
 	}
 }
